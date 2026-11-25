@@ -29,8 +29,10 @@ struct Circle {
     constexpr AABB<float> bounds() const { return {position - radius, position + radius}; }
 
     sf::Vector2f position;
+    sf::Vector2f movement;
     float radius;
     Vector4f color;
+    
 };
 
 struct BVHNode {
@@ -56,6 +58,14 @@ struct BVH {
     }
 
     // TODO Q4: write a reset() function that rebuilds the tree instead of refitting it.
+    void reset() {
+        nodes.clear();
+        indices.resize(primitives->size());
+        std::iota(indices.begin(), indices.end(), 0);
+        nodes.reserve(2 * primitives->size());
+        nodes.push_back({});
+        constructNode(0, static_cast<int>(indices.size()), 0);
+    }
 
     void constructNode(int startIdx, int numIndices, int bvhOffset) {
         const std::vector<Circle>& prims = *primitives;
@@ -124,6 +134,7 @@ struct BVH {
                 }
             }
         }
+
 
         const auto makeLeaf = [&] {
             nodes[bvhOffset] = BVHNode{totalBound, startIdx, numIndices, /*isLeaf=*/true};
@@ -197,7 +208,8 @@ bool intersects(sf::Vector2f point, const BVHNode& node, const BVH& bvh, Vector4
 // moves every circle by its movement.
 struct Scene {
     std::size_t createCircle(sf::Vector2f position, float radius, const Vector4f& color) {
-        circles.push_back({position, radius, color});
+        circles.push_back({position, {0.f, 0.f}, radius, color});
+        
         return circles.size() - 1;
     }
 
@@ -207,6 +219,12 @@ struct Scene {
     }
 
     bool valid(std::size_t i) const { return i < circles.size(); }
+
+    void update() {
+        for (Circle& shape: circles) {
+            shape.position += shape.movement;
+        }
+    }
 
     std::vector<Circle> circles;
 };
@@ -233,8 +251,9 @@ int main() {
     };
     Scene scene;
     for (int n = 0; n < 100; ++n) {
-        scene.createCircle({uniform(0, gScreenWidth), uniform(0, gScreenHeight)}, uniform(10, 20),
+        size_t ID = scene.createCircle({uniform(0, gScreenWidth), uniform(0, gScreenHeight)}, uniform(10, 20),
                            {uniform(0, 1), uniform(0, 1), uniform(0, 1), 1});
+        scene.circles[ID].movement = {uniform(-5.f, 5.f), uniform(-5.f, 5.f)};
     }
     BVH bvh(scene.circles);
 
@@ -251,15 +270,30 @@ int main() {
         }
 
         // TODO Q3: every frame, call update() on the scene and fullRefit() on the BVH.
+        // bvh.fullRefit();
+        bvh.reset();
+        scene.update();
         // TODO Q4: rebuild the BVH with reset() instead of fullRefit().
+
 
         for (int y = 0; y < gScreenHeight; ++y) {
             for (int x = 0; x < gScreenWidth; ++x) {
                 const sf::Vector2f pixel(static_cast<float>(x), static_cast<float>(y));
                 // TODO Q2: antialiasing. Take four samples at offsets of +-0.3333 from the pixel
                 // and average their colors.
+                float offsets[2] = {-0.3333, 0.3333};
                 Vector4f color{};  // stays transparent black on a miss
-                intersects(pixel, bvh.nodes[0], bvh, color);
+                for (int i = 0; i < 2; i++) {
+                    for (int j = 0; j < 2; j++) {
+                        float offX = offsets[i];
+                        float offY = offsets[j];
+                        sf::Vector2f sample = {pixel.x + offX, pixel.y + offY};
+                        Vector4f sampleColor{};
+                        intersects(sample, bvh.nodes[0], bvh, sampleColor);
+                        color += sampleColor;
+                    }
+                }
+                color /= 4.f;
                 const std::size_t i = 4 * (static_cast<std::size_t>(y) * gScreenWidth + x);
                 pixels[i + 0] = static_cast<std::uint8_t>(255 * color.x);  // R
                 pixels[i + 1] = static_cast<std::uint8_t>(255 * color.y);  // G
@@ -273,7 +307,10 @@ int main() {
         window.draw(sprite);
         // TODO Q1: only draw non-leaf nodes so the BVH structure is easier to see.
         for (const BVHNode& node : bvh.nodes) {
-            Draw(window, node.bounds);
+            if (!node.isLeaf) {
+                Draw(window, node.bounds);
+            }
+            
         }
         window.display();
     }

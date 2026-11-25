@@ -1,5 +1,12 @@
 ﻿Q3. What happens to the bounding boxes with update + fullRefit?
+A: As the circles move the bounding boxes get larger and larger and begin to overlap more. This is due to fullRefit() because it updates
+   the bounds of each node without changing which circels belong to which group. Over time BVH gets less efficient since the overlapping boxes mean 
+   more intersection checks.
 
 Q4. What happens with reset (rebuild every frame) instead?
+A: When we use reset(), the bvh is rebuilt every frame with the new positions of the circles. This allows the bounding boxes to stay tighter and not overlap
+   as much, even if it is more expensive than reffiting. 
 
 Q5. Why are some circles drawn with their sides cut off?
+A: Some circles could be drawn with their sides sliced off because BVH rejects sample points that fall outside of a node's bounding box. If a bounding box doesn't fully contain
+   a circle, valid intersections could be getting skipped.
